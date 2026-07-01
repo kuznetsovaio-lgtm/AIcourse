@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build outputs
+.next/
+out/
+build/
+
+# Environment
+.env*
+!.env.example
+
+# IDE
+.DS_Store
+*.swp
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Cache
+*.tsbuildinfo
+.cache/
+
+# Personal files
+cv.pdf
+
+
+portfolio/node_modules/
+portfolio/.next/
+portfolio/.env.local
+frontend/.next/
+kanban/node_modules/
