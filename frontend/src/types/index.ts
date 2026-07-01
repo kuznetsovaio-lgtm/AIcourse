@@ -14,3 +14,8 @@ export interface Board {
   columns: Column[];
   cards: Record<string, Card>;
 }
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}

@@ -19,11 +19,11 @@ export function CardItem({ card, onClick }: CardProps) {
     isDragging,
   } = useSortable({ id: card.id });
 
+  const baseTransform = CSS.Transform.toString(transform);
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: isDragging ? `${baseTransform} rotate(2deg)` : baseTransform,
     transition,
     opacity: isDragging ? 0.5 : 1,
-    transform: isDragging ? `${CSS.Transform.toString(transform)} rotate(2deg)` : CSS.Transform.toString(transform),
   };
 
   return (

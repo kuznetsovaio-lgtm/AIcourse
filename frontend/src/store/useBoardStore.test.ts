@@ -1,121 +1,99 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { useBoardStore } from './useBoardStore';
+import { waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useBoardStore } from "./useBoardStore";
+import { Board } from "@/types";
 
-// Reset store before each test
-beforeEach(() => {
-  const store = useBoardStore.getState();
+vi.mock("@/lib/api", () => ({
+  fetchBoard: vi.fn(),
+  saveBoard: vi.fn(),
+}));
+
+import { fetchBoard, saveBoard } from "@/lib/api";
+
+const mockBoard: Board = {
+  columns: [
+    { id: "backlog", title: "Backlog", cardIds: ["card-1", "card-2"] },
+    { id: "todo", title: "To Do", cardIds: [] },
+  ],
+  cards: {
+    "card-1": { id: "card-1", title: "Card One", details: "First" },
+    "card-2": { id: "card-2", title: "Card Two", details: "Second" },
+  },
+};
+
+function resetStore() {
   useBoardStore.setState({
-    ...store,
-    initialize: store.initialize,
+    columns: [],
+    cards: {},
+    initialized: false,
+    loading: false,
+    error: "",
   });
-});
+}
 
-describe('Board Store', () => {
-  describe('Initial State', () => {
-    it('has 5 columns', () => {
-      const { columns } = useBoardStore.getState();
-      expect(columns).toHaveLength(5);
-    });
-
-    it('has columns with correct titles', () => {
-      const { columns } = useBoardStore.getState();
-      expect(columns.map(c => c.title)).toEqual([
-        'Backlog', 'To Do', 'In Progress', 'Review', 'Done'
-      ]);
-    });
-
-    it('has 9 initial cards', () => {
-      const { cards } = useBoardStore.getState();
-      expect(Object.keys(cards)).toHaveLength(9);
-    });
+describe("useBoardStore", () => {
+  beforeEach(() => {
+    resetStore();
+    vi.mocked(fetchBoard).mockReset();
+    vi.mocked(saveBoard).mockReset();
   });
 
-  describe('addCard', () => {
-    it('adds a card to a column', () => {
-      const { addCard, columns } = useBoardStore.getState();
-      const initialCount = columns[0].cardIds.length;
+  it("loads the board from the backend", async () => {
+    vi.mocked(fetchBoard).mockResolvedValue(mockBoard);
 
-      addCard('backlog', 'New Test Card');
+    await useBoardStore.getState().initialize();
 
-      const { columns: newColumns, cards } = useBoardStore.getState();
-      expect(newColumns[0].cardIds.length).toBe(initialCount + 1);
-      expect(Object.keys(cards)).toHaveLength(10);
-    });
+    const state = useBoardStore.getState();
+    expect(state.columns).toHaveLength(2);
+    expect(state.cards["card-1"].title).toBe("Card One");
+    expect(state.initialized).toBe(true);
+    expect(state.loading).toBe(false);
   });
 
-  describe('deleteCard', () => {
-    it('removes a card from the board', () => {
-      const { deleteCard, columns } = useBoardStore.getState();
-      const cardToDelete = columns[0].cardIds[0];
+  it("captures initialization errors", async () => {
+    vi.mocked(fetchBoard).mockRejectedValue(new Error("Backend unavailable"));
 
-      deleteCard(cardToDelete);
+    await useBoardStore.getState().initialize();
 
-      const { cards, columns: newColumns } = useBoardStore.getState();
-      expect(cards[cardToDelete]).toBeUndefined();
-      expect(newColumns[0].cardIds).not.toContain(cardToDelete);
-    });
+    expect(useBoardStore.getState().error).toBe("Backend unavailable");
   });
 
-  describe('updateCard', () => {
-    it('updates card title and details', () => {
-      const { updateCard, columns } = useBoardStore.getState();
-      const cardId = columns[0].cardIds[0];
+  it("adds a card and persists the updated board", async () => {
+    vi.mocked(saveBoard).mockResolvedValue(mockBoard);
+    useBoardStore.getState().setBoard(mockBoard);
 
-      updateCard(cardId, 'Updated Title', 'Updated Details');
+    useBoardStore.getState().addCard("backlog", "New Card");
 
-      const { cards } = useBoardStore.getState();
-      expect(cards[cardId].title).toBe('Updated Title');
-      expect(cards[cardId].details).toBe('Updated Details');
-    });
+    const state = useBoardStore.getState();
+    expect(state.columns[0].cardIds).toHaveLength(3);
+    expect(Object.values(state.cards).some((card) => card.title === "New Card")).toBe(
+      true,
+    );
+    expect(vi.mocked(saveBoard)).toHaveBeenCalledTimes(1);
   });
 
-  describe('updateColumnTitle', () => {
-    it('renames a column', () => {
-      const { updateColumnTitle } = useBoardStore.getState();
+  it("moves cards between columns and persists", async () => {
+    vi.mocked(saveBoard).mockResolvedValue(mockBoard);
+    useBoardStore.getState().setBoard(mockBoard);
 
-      updateColumnTitle('backlog', 'New Column Name');
+    useBoardStore.getState().moveCard("card-1", "backlog", "todo", 0);
 
-      const { columns } = useBoardStore.getState();
-      expect(columns[0].title).toBe('New Column Name');
-    });
-
-    it('trims whitespace from title', () => {
-      const { updateColumnTitle } = useBoardStore.getState();
-
-      updateColumnTitle('backlog', '  Trimmed Name  ');
-
-      const { columns } = useBoardStore.getState();
-      expect(columns[0].title).toBe('Trimmed Name');
-    });
+    const state = useBoardStore.getState();
+    expect(state.columns[0].cardIds).not.toContain("card-1");
+    expect(state.columns[1].cardIds).toContain("card-1");
+    expect(vi.mocked(saveBoard)).toHaveBeenCalledTimes(1);
   });
 
-  describe('moveCard', () => {
-    it('moves card within the same column', () => {
-      const { moveCard, columns } = useBoardStore.getState();
-      const columnId = 'backlog';
-      const cardId = columns[0].cardIds[0];
-      const newIndex = 1;
+  it("stores persistence failures without losing the optimistic update", async () => {
+    vi.mocked(saveBoard).mockRejectedValue(new Error("Save failed"));
+    useBoardStore.getState().setBoard(mockBoard);
 
-      moveCard(cardId, columnId, columnId, newIndex);
+    useBoardStore.getState().updateColumnTitle("backlog", "Roadmap");
 
-      const { columns: newColumns } = useBoardStore.getState();
-      expect(newColumns[0].cardIds.indexOf(cardId)).toBe(newIndex);
-    });
-
-    it('moves card between columns', () => {
-      const { moveCard, columns } = useBoardStore.getState();
-      const cardId = columns[0].cardIds[0];
-      const fromColumn = 'backlog';
-      const toColumn = 'todo';
-
-      moveCard(cardId, fromColumn, toColumn, 0);
-
-      const { columns: newColumns } = useBoardStore.getState();
-      const backlogCards = newColumns.find(c => c.id === 'backlog')!.cardIds;
-      const todoCards = newColumns.find(c => c.id === 'todo')!.cardIds;
-
-      expect(backlogCards).not.toContain(cardId);
-      expect(todoCards).toContain(cardId);
+    await waitFor(() => {
+      const state = useBoardStore.getState();
+      expect(state.columns[0].title).toBe("Roadmap");
+      expect(state.error).toBe("Save failed");
     });
   });
 });

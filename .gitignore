@@ -23,6 +23,11 @@ npm-debug.log*
 # Cache
 *.tsbuildinfo
 .cache/
+__pycache__/
+*.pyc
+backend/.venv/
+*.egg-info/
+data/*.db
 
 # Personal files
 cv.pdf
